@@ -3,21 +3,37 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use App\Models\Assignment;
-use App\Models\Data;
+use App\Factories\AssignmentFactory;
+use App\Factories\DataFactory;
+use App\Factories\ReviewerFactory;
+use App\Facades\ModelFacade;
+use App\Events\DataUpdated;
 use App\Models\Reviewer;
-use App\Models\Values;
 use Illuminate\Support\Facades\Session;
 
 class TugasController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
+    protected $assignmentFactory;
+    protected $dataFactory;
+    protected $reviewerFactory;
+    protected $modelFacade;
+
+    public function __construct(
+        AssignmentFactory $assignmentFactory,
+        DataFactory $dataFactory,
+        ReviewerFactory $reviewerFactory,
+        ModelFacade $modelFacade
+    ) {
+        $this->assignmentFactory = $assignmentFactory;
+        $this->dataFactory = $dataFactory;
+        $this->reviewerFactory = $reviewerFactory;
+        $this->modelFacade = $modelFacade;
+    }
+
     public function index(Request $r)
     {
-        $post = Assignment::with('getUsers')->with('getReviewers')->where('reviewer', Session::get('id'))->orderby('id', 'DESC')->paginate(5);
-        $v = Values::get();
+        $post = $this->modelFacade->getAssignmentsWithUsersAndReviewers(Session::get('id'));
+        $v = $this->modelFacade->getAllValues();
 
         if ($r->ajax()) {
             return view('admin.tugas.lists', compact('post'), ['values' => $v]);
@@ -28,8 +44,8 @@ class TugasController extends Controller
 
     public function index_user(Request $r)
     {
-        $post = Assignment::with('getUsers')->with('getReviewers')->where('reviewer', Session::get('id'))->orderby('id', 'DESC')->paginate(5);
-        $v = Values::get();
+        $post = $this->modelFacade->getAssignmentsWithUsersAndReviewers(Session::get('id'));
+        $v = $this->modelFacade->getAllValues();
 
         if ($r->ajax()) {
             return view('admin.tugas.lists', compact('post'), ['values' => $v]);
@@ -42,15 +58,10 @@ class TugasController extends Controller
     {
         try {
             $id = $_GET['id'];
-            $q1 = Reviewer::with('getAssignment')->with('getData')->where('id_assignments', $id)->where('finish', 0)->get();
-            return response()->json([
-                'status' => 'ok',
-                'datas' => $q1
-            ]);
+            $q1 = $this->modelFacade->getReviewerAssignments($id, 0);
+            return response()->json(['status' => 'ok', 'datas' => $q1]);
         } catch (\Throwable $th) {
-            return response()->json([
-                'status' => $th->getMessage()
-            ]);
+            return response()->json(['status' => $th->getMessage()]);
         }
     }
 
@@ -58,15 +69,10 @@ class TugasController extends Controller
     {
         try {
             $id = $_GET['id'];
-            $q1 = Reviewer::with('getAssignment')->with('getData')->where('id_assignments', $id)->where('finish', 1)->get();
-            return response()->json([
-                'status' => 'ok',
-                'datas' => $q1
-            ]);
+            $q1 = $this->modelFacade->getReviewerAssignments($id, 1);
+            return response()->json(['status' => 'ok', 'datas' => $q1]);
         } catch (\Throwable $th) {
-            return response()->json([
-                'status' => $th->getMessage()
-            ]);
+            return response()->json(['status' => $th->getMessage()]);
         }
     }
 
@@ -74,10 +80,10 @@ class TugasController extends Controller
     {
         try {
             $id = $_GET['id'];
-            $q1 = Reviewer::with('getAssignment')->with('getData')->where('id_assignments', $id)->get();
+            $q1 = $this->modelFacade->getReviewerAssignments($id, null);
             $selesai = Reviewer::where('id_assignments', $id)->where('finish', 1)->count();
             $belumSelesai = Reviewer::where('id_assignments', $id)->where('finish', 0)->count();
-            $assignment = Assignment::with('getUsers')->with('getReviewer')->where('id', $id)->first();
+            $assignment = $this->modelFacade->getAssignmentDetails($id);
             return response()->json([
                 'status' => 'ok',
                 'belum' => $belumSelesai,
@@ -86,9 +92,7 @@ class TugasController extends Controller
                 'datas' => $q1
             ]);
         } catch (\Throwable $th) {
-            return response()->json([
-                'status' => $th->getMessage()
-            ]);
+            return response()->json(['status' => $th->getMessage()]);
         }
     }
 
@@ -96,16 +100,11 @@ class TugasController extends Controller
     {
         try {
             $id = $_GET['id'];
-            $q = Data::where('id', $id)->first();
+            $q = $this->dataFactory->create()->where('id', $id)->first();
 
-            return response()->json([
-                'status' => 'ok',
-                'datas' => $q
-            ]);
+            return response()->json(['status' => 'ok', 'datas' => $q]);
         } catch (\Throwable $th) {
-            return response()->json([
-                'status' => $th->getMessage()
-            ]);
+            return response()->json(['status' => $th->getMessage()]);
         }
     }
 
@@ -114,27 +113,20 @@ class TugasController extends Controller
         try {
             $idData = $_POST['idData'];
             $idR = $_POST['idReviewer'];
-            $ram3  = $_POST['ram3'];
+            $ram3 = $_POST['ram3'];
             $ketRam3 = $_POST['ketRam3'];
 
-            $updateData = [
-                'ram3' => $ram3,
-                'keterangan_ram3' => $ketRam3
-            ];
-            $updateR = [
-                'finish' => 1
-            ];
+            $updateData = ['ram3' => $ram3, 'keterangan_ram3' => $ketRam3];
+            $updateR = ['finish' => 1];
 
-            Data::where('id', $idData)->update($updateData);
-            Reviewer::where('id', $idR)->update($updateR);
+            $this->modelFacade->updateDataAndReviewer($idData, $idR, $updateData, $updateR);
 
-            return response()->json([
-                'status' => 'ok'
-            ]);
+            // Fire the DataUpdated event
+            event(new DataUpdated($updateData));
+
+            return response()->json(['status' => 'ok']);
         } catch (\Throwable $th) {
-            return response()->json([
-                'status' => $th->getMessage()
-            ]);
+            return response()->json(['status' => $th->getMessage()]);
         }
     }
 }
