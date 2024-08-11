@@ -2,14 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use Exception;
+use App\Models\Data;
 use App\Models\PreviewData;
 use Illuminate\Http\Request;
-use App\Models\Data;
+use App\Strategies\UriParserStrategy;
+use App\Builders\DataBuilderInterface;
 use Illuminate\Support\Facades\Session;
-use Exception;
+use App\Adapters\PreviewAdapterInterface;
 
 class DataController extends Controller
 {
+    protected $dataBuilder;
+    protected $previewAdapter;
+    private $uriParser;
+
+    public function __construct(DataBuilderInterface $dataBuilder, PreviewAdapterInterface $previewAdapter, UriParserStrategy $uriParser)
+    {
+        $this->dataBuilder = $dataBuilder;
+        $this->previewAdapter = $previewAdapter;
+        $this->uriParser = $uriParser;
+    }
     public function getDataEdit()
     {
         $id = $_GET['id'];
@@ -43,40 +56,17 @@ class DataController extends Controller
             $uri1 = $q[0]['eviden1'];
             $uri2 = $q[0]['eviden2'];
             $uri3 = $q[0]['eviden3'];
-            $queryString1 = parse_url($uri1, PHP_URL_QUERY);
-            if ($queryString1) {
-                parse_str($queryString1, $queryParameters1);
-                $id1 = $queryParameters1['id'];
-            } else {
-                $id1 = '';
-            }
-            if ($uri2 != '') {
-                $queryString2 = parse_url($uri2, PHP_URL_QUERY);
-                if ($queryString2) {
-                    parse_str($queryString2, $queryParameters2);
-                    $id2 = $queryParameters2['id'];
-                } else {
-                    $id2 = '';
-                }
-            } else {
-                $id2 = '';
-            }
-            if ($uri3 != '') {
-                $queryString3 = parse_url($uri3, PHP_URL_QUERY);
-                if ($queryString3) {
-                    parse_str($queryString3, $queryParameters3);
-                    $id3 = $queryParameters3['id'];
-                } else {
-                    $id3 = '';
-                }
-            } else {
-                $id3 = '';
-            }
+
+            $id1 = $this->uriParser->parse($uri1);
+            $id2 = $this->uriParser->parse($uri2);
+            $id3 = $this->uriParser->parse($uri3);
+
             $array_id = [
                 'id1' => $id1,
                 'id2' => $id2,
                 'id3' => $id3
             ];
+
             return view('admin.data.index', [
                 'datas' => $q,
                 'id' => $array_id
@@ -364,25 +354,16 @@ class DataController extends Controller
     {
         if (Session('preview_access') != 'granted') {
             return redirect()->to('/auth');
-        } else {
-            $qPreview = PreviewData::where('unique_id', Session('unique_id'))->get();
-            foreach ($qPreview as $preview) {
-                $q1 = Data::where('rekon', $preview->rekon)->where('id_valins', $preview->id_valins)->first();
-                if ($q1) {
-                    PreviewData::where('id', $preview->id)->update([
-                        'isValid' => 0
-                    ]);
-                }
-            }
-            $qPreviewNotValid = PreviewData::where('unique_id', Session('unique_id'))->where('isValid', 0)->get();
-            $qPreviewValid = PreviewData::where('unique_id', Session('unique_id'))->where('isValid', 1)->get();
-            // dd('success with id: ' . Session('unique_id'));
-            Session::put('preview_access', 'granted');
-            return view('admin.data.preview', [
-                'previewValid' => $qPreviewValid,
-                'previewNotValid' => $qPreviewNotValid
-            ]);
         }
+
+        $uniqueId = Session('unique_id');
+        $previewData = $this->previewAdapter->getPreviewData($uniqueId);
+
+        Session::put('preview_access', 'granted');
+        return view('admin.data.preview', [
+            'previewValid' => $previewData['qPreviewValid'],
+            'previewNotValid' => $previewData['qPreviewNotValid']
+        ]);
     }
 
     public function previewBatal()
@@ -401,76 +382,65 @@ class DataController extends Controller
     {
         if (empty(Session::get('unique_id')))
             return redirect()->to('/auth');
-        $q = PreviewData::where('unique_id', Session::get('unique_id'))->where('isValid', 1)->get();
+        $q = PreviewData::where(
+            'unique_id',
+            Session::get('unique_id')
+        )->where('isValid', 1)->get();
         if ($q) {
             foreach ($q as $data) {
-                $timestamp = $data['timestamp_bawaan'];
-                $witel = $data['witel'];
-                $id_valins = $data['id_valins'];
-                $eviden1 = $data['eviden1'];
-                $eviden2 = $data['eviden2'];
-                $eviden3 = $data['eviden3'];
-                $id_valins_lama = $data['id_valins_lama'];
-                $approve_aso = $data['approve_aso'];
-                $keterangan_aso = $data['keterangan_aso'];
-                $ram3 = $data['ram3'];
-                $keterangan_ram3 = $data['keterangan_ram3'];
-                $rekon = $data['rekon'];
-
-                if ($eviden1 != '') {
-                    $queryString1 = parse_url($eviden1, PHP_URL_QUERY);
-                    if ($queryString1) {
-                        parse_str($queryString1, $queryParameters1);
-                        $id1 = $queryParameters1['id'];
-                    }
-                } else {
-                    $id1 = '';
-                }
-                if ($eviden2 != '') {
-                    $queryString2 = parse_url($eviden2, PHP_URL_QUERY);
-                    if ($queryString2) {
-                        parse_str($queryString2, $queryParameters2);
-                        $id2 = $queryParameters2['id'];
-                    }
-                } else {
-                    $id2 = '';
-                }
-                if ($eviden3 != '') {
-                    $queryString3 = parse_url($eviden3, PHP_URL_QUERY);
-                    if ($queryString3) {
-                        parse_str($queryString3, $queryParameters3);
-                        $id3 = $queryParameters3['id'];
-                    }
-                } else {
-                    $id3 = '';
-                }
-                $create = [
-                    'timestamp_bawaan' => $timestamp,
-                    'witel' => $witel,
-                    'id_valins' => $id_valins,
-                    'eviden1' => $eviden1,
-                    'eviden2' => $eviden2,
-                    'eviden3' => $eviden3,
-                    'id_valins_lama' => $id_valins_lama,
-                    'approve_aso' => $approve_aso,
-                    'keterangan_aso' => $keterangan_aso,
-                    'ram3' => $ram3,
-                    'keterangan_ram3' => $keterangan_ram3,
-                    'rekon' => $rekon,
-                    'id_eviden1' => $id1,
-                    'id_eviden2' => $id2,
-                    'id_eviden3' => $id3
+                $this->dataBuilder
+                    ->setTimestamp($data['timestamp_bawaan'])
+                    ->setWitel($data['witel'])
+                    ->setIdValins($data['id_valins'])
+                    ->setEviden1($data['eviden1'])
+                    ->setEviden2($data['eviden2'])
+                    ->setEviden3($data['eviden3'])
+                    ->setIdValinsLama($data['id_valins_lama'])
+                    ->setApproveAso($data['approve_aso'])
+                    ->setKeteranganAso($data['keterangan_aso'])
+                    ->setRam3($data['ram3'])
+                    ->setKeteranganRam3($data['keterangan_ram3'])
+                    ->setRekon($data['rekon']);
+                $evidens = [
+                    $data['eviden1'],
+                    $data['eviden2'],
+                    $data['eviden3']
                 ];
-                Data::create($create);
-                PreviewData::where('unique_id', Session::get('unique_id'))->where('isValid', 1)->where('id_valins', $id_valins)->update([
-                    'isSubmit' => 1
-                ]);
+                $ids = ['id1', 'id2', 'id3'];
+                foreach ($evidens as $index => $eviden) {
+                    if ($eviden != '') {
+                        $queryString = parse_url(
+                            $eviden,
+                            PHP_URL_QUERY
+                        );
+                        if ($queryString) {
+                            parse_str(
+                                $queryString,
+                                $queryParameters
+                            );
+                            $this->dataBuilder->{'setIdEviden' . ($index + 1)}($queryParameters['id']);
+                        }
+                    } else {
+                        $this->dataBuilder->{'setIdEviden' .
+                            ($index + 1)}('');
+                    }
+                }
+                $this->dataBuilder->build();
+                PreviewData::where(
+                    'unique_id',
+                    Session::get('unique_id')
+                )->where('isValid', 1)
+                    ->where('id_valins', $data['id_valins'])->update([
+                        'isSubmit' => 1
+                    ]);
             }
             Session::pull('unique_id');
             Session::pull('preview_access');
-            return redirect()->to('/admin/data')->with('excelStatus', 'Proses Berhasil');
+            return redirect()->to('/admin/data')
+                > with('excelStatus', 'Proses Berhasil');
         } else {
-            return redirect()->to('/admin/data')->with('excelFailed', 1);
+            return redirect()->to('/admin/data')
+                ->with('excelFailed', 1);
         }
     }
 
