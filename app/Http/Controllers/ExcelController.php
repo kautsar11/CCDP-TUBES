@@ -8,12 +8,12 @@ use App\Imports\DatasImport;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Singleton\SingletonTrait;
 
 class ExcelController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
+    use SingletonTrait;
+
     public function process(Request $r)
     {
         try {
@@ -22,7 +22,6 @@ class ExcelController extends Controller
             $file = Excel::import(new DatasImport, $r->file('file'));
             $fileName = $r->file('file')->getClientOriginalName();
 
-            // dd('success with id: '. Session('unique_id'));
             if ($file) {
                 Session::put('preview_access','granted');
                 Session::put('fileName', $fileName);
